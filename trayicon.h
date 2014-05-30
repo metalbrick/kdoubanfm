@@ -24,7 +24,9 @@
 
 #include <KStatusNotifierItem>
 #include <QList>
+#include <QWeakPointer>
 #include <qjson/parser.h>
+#include <QPixmap>
 
 #include <Phonon/MediaObject>
 #include <Phonon/AudioOutput>
@@ -35,6 +37,8 @@ class QMenu;
 class KAction;
 class KJob;
 class Mpris2;
+class KNotification;
+class QPixmap;
 
 class SongInfo
 {
@@ -49,9 +53,9 @@ public:
     int aid;
     int like;
 
+
     // flag for full-played or skipped
-    mutable bool fullplayed;
-};
+    mutable bool fullplayed; };
 
 class TrayIcon : public KStatusNotifierItem
 {
@@ -109,6 +113,7 @@ private:
     QByteArray m_email;
 
     // actions
+    KAction* nowplayingLabel;
     KAction* pauseAction;
     KAction* skipAction;
     KAction* likeAction;
@@ -132,6 +137,12 @@ private:
     // media player
     Phonon::MediaObject* m_media;
     Phonon::AudioOutput* m_output;
+
+    QWeakPointer<KNotification> m_notify;
+    QString m_curTitle;
+    QString m_curText;
+    QPixmap m_curCoverart;
+    bool m_iscurLike;
 };
 
 #endif // TRAYICON_H

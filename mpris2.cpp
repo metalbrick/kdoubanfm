@@ -103,6 +103,15 @@ QVariantMap Mpris2::Metadata() const
     map["xesam:artist"] = QStringList() << si.artist;
     map["xesam:title"] = si.title;
     map["xesam:url"] = si.url;
+
+//    QString command = "notify-send ";
+//    command += si.title;
+//    command += " '" + si.artist + "-" + si.albumtitle + "'";
+//    command += " '-t' 5000";
+
+////    system("notify-send 'The Message Title' 'Your Message Text' '-t' 5000");
+//    system(command.toUtf8().constData());
+
     return map;
 }
 

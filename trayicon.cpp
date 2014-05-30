@@ -24,6 +24,8 @@
 #include <QDialog>
 #include <QTimer>
 #include <QUrl>
+#include <QFile>
+#include <QMessageBox>
 
 #include <KAboutApplicationDialog>
 #include <KAction>
@@ -38,6 +40,7 @@
 #include <KLocale>
 #include <KMenu>
 #include <KShortcut>
+#include <KNotification>
 
 #include "mpris2.h"
 #include "ui_account.h"
@@ -47,7 +50,7 @@ TrayIcon::TrayIcon() : KStatusNotifierItem("kdoubanfm")
     likeAction = 0;
     m_channelMenu = 0;
     m_channelAct = 0;
-    m_channelId = 1;
+    m_channelId = 0;
     m_playIndex = -1;
     m_playIndexNext = 0;
     m_albumPictureJob = 0;
@@ -56,7 +59,7 @@ TrayIcon::TrayIcon() : KStatusNotifierItem("kdoubanfm")
 
     setAssociatedWidget(contextMenu());
     setIconByName("kdoubanfm");
-//     setTitle(i18n("KDoubanFM"));
+    //     setTitle(i18n("KDoubanFM"));
     setToolTipIconByName("kdoubanfm");
     setToolTipTitle(i18n("KDoubanFM"));
     setToolTipSubTitle(i18n("Douban FM"));
@@ -69,6 +72,8 @@ TrayIcon::TrayIcon() : KStatusNotifierItem("kdoubanfm")
 
 TrayIcon::~TrayIcon()
 {
+    if ( m_notify )
+        m_notify.data()->close();
 }
 
 void TrayIcon::login()
@@ -228,6 +233,10 @@ void TrayIcon::end(int sid)
 void TrayIcon::init()
 {
     // setup menu actions
+    nowplayingLabel = new KAction(KIcon("emblem-music-symbolic"), i18n("nowpalying ..."), this);
+    nowplayingLabel->setObjectName("kdoubanfm-nowplaying");
+    contextMenu()->addAction(nowplayingLabel);
+
     pauseAction = new KAction(KIcon("media-playback-start"), i18n("&Play"), this);
     pauseAction->setObjectName("kdoubanfm-pause");
     pauseAction->setGlobalShortcut(KShortcut(Qt::Key_MediaPlay));
@@ -240,13 +249,14 @@ void TrayIcon::init()
     connect(skipAction, SIGNAL(triggered()), this, SLOT(slotSkipAction()));
     contextMenu()->addAction(skipAction);
 
-    likeAction = new KAction(KIcon("emblem-favorite"), i18n("&Like"), this);
+    likeAction = new KAction(KIcon("non-starred-symbolic"), i18n("&Like"), this);
     likeAction->setEnabled(false);
-    likeAction->setCheckable(true);
+    // likeAction->setCheckable(true);
+    m_iscurLike = false;
     connect(likeAction, SIGNAL(triggered()), this, SLOT(slotLikeAction()));
     contextMenu()->addAction(likeAction);
 
-    banAction = new KAction(KIcon("edit-bomb"), i18n("&Ban"), this);
+    banAction = new KAction(KIcon("user-trash-symbolic"), i18n("&Ban"), this);
     banAction->setEnabled(false);
     connect(banAction, SIGNAL(triggered()), this, SLOT(slotBanAction()));
     contextMenu()->addAction(banAction);
@@ -335,6 +345,7 @@ void TrayIcon::slot_login(KJob* job)
     playlist();
 
     likeAction->setEnabled(true);
+    nowplayingLabel->setEnabled(true);
     banAction->setEnabled(true);
 
     m_redHeartMHz->setEnabled(true);
@@ -500,18 +511,28 @@ void TrayIcon::slotSkipAction()
 void TrayIcon::slotLikeAction()
 {
     const SongInfo& si = m_playlist.at(m_playIndex);
-    if (likeAction->isChecked()) {
+    if ( !m_iscurLike ) {
+        likeAction->setIcon(KIcon("starred-symbolic"));
+        likeAction->setText(i18n("&Unlike"));
         like(si.sid);
     }
     else {
+        likeAction->setIcon(KIcon("non-starred-symbolic"));
+        likeAction->setText(i18n("&Like"));
         unlike(si.sid);
     }
+
+    m_iscurLike = !m_iscurLike;
 }
 
 void TrayIcon::slotBanAction()
 {
-    const SongInfo& si = m_playlist.at(m_playIndex);
-    ban(si.sid);
+    if ( QMessageBox::information( NULL, "KDoubanFM", "Are you sure Ban this song ?", "Sure", "Cancel") == 0 ) {
+
+        const SongInfo& si = m_playlist.at(m_playIndex);
+        ban(si.sid);
+        slotSkipAction();
+    };
 }
 
 void TrayIcon::slotAccountAction()
@@ -592,7 +613,16 @@ void TrayIcon::slotMediaCurrentSourceChanged()
     setToolTipSubTitle(si.artist + " - " + si.albumtitle);
 
     // change like state
-    likeAction->setChecked(si.like == 1);
+    // likeAction->setChecked(si.like == 1);
+    m_iscurLike = ( si.like == 1);
+    if ( m_iscurLike ) {
+        likeAction->setIcon(KIcon("starred-symbolic"));
+        likeAction->setText(i18n("&Unlike"));
+    }
+    else {
+        likeAction->setIcon(KIcon("non-starred-symbolic"));
+        likeAction->setText(i18n("&Like"));
+    }
 
     // download album picture
     if (m_albumPictureJob) {
@@ -615,25 +645,69 @@ void TrayIcon::slotMediaCurrentSourceChanged()
         m_playIndexNext = 0;
         playlist(m_playlist);
     }
+
+    // KNotification Test by metalbrick
+    KNotification *notify = m_notify.data();
+    if( !notify )
+        notify = new KNotification( "trackChange" );
+    m_curTitle = i18n( si.title.toUtf8() );
+    m_curText = i18n( (si.artist + " - " + si.albumtitle).toUtf8() );
+    notify->setTitle( m_curTitle );
+    notify->setText( m_curText );
+    notify->setPixmap( m_curCoverart );
+    notify->sendEvent();
+
+    // Change Nowplaying Lable on Traymenu
+    nowplayingLabel->setText((m_curTitle + " / " + m_curText).left(32) + " ..." );
+    this->setToolTipTitle(m_curTitle + " / " + m_curText);
+
+    if( m_notify ) // existing notification already shown
+        notify->update();
+    notify->sendEvent(); // (re)start timeout in both cases
+    m_notify = notify;
 }
 
 void TrayIcon::slotMeidaStateChanged(Phonon::State newstate)
 {
+    QString title;
+    QString text;
+    QPixmap pixmap;
     switch (newstate) {
         case Phonon::StoppedState:
+            title = i18n( "Douban FM" );
+            text = i18n( "Stopped" );
+            break;
         case Phonon::PausedState:
             pauseAction->setIcon(KIcon("media-playback-start"));
             pauseAction->setText(i18n("&Play"));
+            title = i18n( "Douban FM" );
+            text = i18n( "Paused" );
             break;
         case Phonon::PlayingState:
             pauseAction->setIcon(KIcon("media-playback-pause"));
             pauseAction->setText(i18n("&Pause"));
+            title = m_curTitle;
+            text = m_curText;
+            pixmap = m_curCoverart;
             break;
         case Phonon::ErrorState:
         case Phonon::BufferingState:
         case Phonon::LoadingState:
             break;
     }
+
+    KNotification *notify = m_notify.data();
+    if( !notify )
+        notify = new KNotification( "trackChange" );
+    notify->setTitle( title );
+    notify->setText( text );
+    notify->setPixmap( pixmap );
+    notify->sendEvent();
+
+    if( m_notify ) // existing notification already shown
+        notify->update();
+    notify->sendEvent(); // (re)start timeout in both cases
+    m_notify = notify;
 }
 
 void TrayIcon::slotAlbumPicture(KJob* job)
@@ -648,5 +722,13 @@ void TrayIcon::slotAlbumPicture(KJob* job)
 
     QPixmap pixmap;
     pixmap.loadFromData(j->data());
+    m_curCoverart = pixmap;
+    m_notify.data()->setPixmap(pixmap);
+
+//    QFile outFile("/home/transbric/logFile");
+//    outFile.open(QIODevice::WriteOnly | QIODevice::Append);
+//    QTextStream out(&outFile);
+//    out << j->data() << "\n";
+
     setToolTipIconByPixmap(pixmap);
 }
