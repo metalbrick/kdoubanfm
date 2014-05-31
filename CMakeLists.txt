@@ -51,6 +51,7 @@ target_link_libraries(kdoubanfm
 
 install(TARGETS kdoubanfm ${INSTALL_TARGETS_DEFAULT_ARGS})
 install(PROGRAMS kdoubanfm.desktop DESTINATION ${XDG_APPS_INSTALL_DIR})
+install( FILES kdoubanfm.notifyrc DESTINATION ${DATA_INSTALL_DIR}/kdoubanfm )
 
 add_subdirectory(icons)
 add_subdirectory(po)
