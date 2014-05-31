@@ -39,6 +39,9 @@ class KJob;
 class Mpris2;
 class KNotification;
 class QPixmap;
+namespace KWallet {
+    class Wallet;
+}
 
 class SongInfo
 {
@@ -95,6 +98,7 @@ private Q_SLOTS:
     void slotMeidaStateChanged(Phonon::State newstate);
 
     void slotAlbumPicture(KJob* job);
+    void walletOpened(bool ok);
 
 private:
     friend class Mpris2;
@@ -143,6 +147,7 @@ private:
     QString m_curText;
     QPixmap m_curCoverart;
     bool m_iscurLike;
+    KWallet::Wallet* m_wallet;
 };
 
 #endif // TRAYICON_H

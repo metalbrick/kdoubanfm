@@ -41,6 +41,7 @@
 #include <KMenu>
 #include <KShortcut>
 #include <KNotification>
+#include <KWallet/Wallet>
 
 #include "mpris2.h"
 #include "ui_account.h"
@@ -275,6 +276,12 @@ void TrayIcon::init()
     m_channelAct->setExclusive(true);
     connect(m_channelAct, SIGNAL(triggered(QAction*)), this, SLOT(slotChannelAction(QAction*)));
 
+    //Prepare for KWallet by metalbrick
+    m_wallet = KWallet::Wallet::openWallet(KWallet::Wallet::NetworkWallet(),
+                                           contextMenu()->winId(),
+                                           KWallet::Wallet::Asynchronous);
+    connect(m_wallet, SIGNAL(walletOpened(bool)), SLOT(walletOpened(bool)));
+
     // predefined red heart channel
     m_redHeartMHz = m_channelMenu->addAction(i18n("Red Heart MHz"));
     m_redHeartMHz->setCheckable(true);
@@ -295,16 +302,6 @@ void TrayIcon::init()
 
     // mpris object
     new Mpris2(this);
-
-    // load account info
-    KConfigGroup cg(KGlobal::config(), "Account");
-    m_accountEmail = cg.readEntry("Email", QByteArray());
-    m_accountPassword = cg.readEntry("Password", QByteArray());
-
-    if (!m_accountEmail.isEmpty() && !m_accountPassword.isEmpty()) {
-        // let us login now
-        login();
-    }
 
     // get channel sub menu entries
     channels();
@@ -551,13 +548,49 @@ void TrayIcon::slotAccountAction()
 
         KConfigGroup cg(KGlobal::config(), "Account");
         cg.writeEntry("Email", m_accountEmail);
-        cg.writeEntry("Password", m_accountPassword);
         cg.sync();
+
+        // Integrated with KWallet by metalbrick
+        if (m_wallet->writePassword(m_accountEmail, m_accountPassword)) {
+            kDebug() << "Writing Password to KWallet Failed.";
+        }
+        else {
+            kDebug() << "Write Password to KWallet Succesfully.";
+        }
 
         if (!m_accountEmail.isEmpty() && !m_accountPassword.isEmpty()) {
             // let us login now
             login();
         }
+    }
+}
+
+void TrayIcon::walletOpened(bool ok)
+{
+    // Integrated with KWallet by metalbrick
+    if ( ok &&
+         (m_wallet->hasFolder("KDoubanFM") ||
+        m_wallet->createFolder("KDoubanFM")) &&
+        m_wallet->setFolder("KDoubanFM")) {
+
+        // load account info
+        KConfigGroup cg(KGlobal::config(), "Account");
+        m_accountEmail = cg.readEntry("Email", QByteArray());
+        //    m_accountPassword = cg.readEntry("Password", QByteArray());
+        // Reda Account & Password from KWallet
+        QString tmp_pswd;
+        m_wallet->readPassword(QString(m_accountEmail), tmp_pswd);
+        m_accountPassword =  tmp_pswd.toUtf8();
+        if (!m_accountEmail.isEmpty() && !m_accountPassword.isEmpty()) {
+          // let us login now
+          login();
+        }
+    }
+    else {
+        KNotification notify( "message" );
+        notify.setTitle("KDoubanFM");
+        notify.setText("Login Failed, Checkup your KWallet.");
+        notify.sendEvent();
     }
 }
 
@@ -655,7 +688,6 @@ void TrayIcon::slotMediaCurrentSourceChanged()
     notify->setTitle( m_curTitle );
     notify->setText( m_curText );
     notify->setPixmap( m_curCoverart );
-    notify->sendEvent();
 
     // Change Nowplaying Lable on Traymenu
     nowplayingLabel->setText((m_curTitle + " / " + m_curText).left(32) + " ..." );
